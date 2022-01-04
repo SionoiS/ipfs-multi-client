@@ -1,0 +1,22 @@
+[package]
+name = "ipfs-multi-client"
+description = "Ipfs client library for WASM and Desktop"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+
+[dependencies]
+cid = { version = "0.7", default-features = false, features = ["std"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "io"] }
+reqwest = { git = "https://github.com/SionoiS/reqwest", branch = "stream", default-features = false, features = ["json", "multipart", "stream"]}
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0", default-features = false, features = [] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
