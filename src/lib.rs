@@ -30,8 +30,25 @@ pub struct IpfsService {
     base_url: Rc<Url>,
 }
 
+impl Default for IpfsService {
+    fn default() -> Self {
+        let base_url = Url::parse(DEFAULT_URI).expect("Pasrsing URI");
+        let base_url = Rc::from(base_url);
+
+        let client = Client::new();
+
+        Self { client, base_url }
+    }
+}
+
 impl IpfsService {
-    //TODO new fn for wasm and desktop
+    pub fn new(url: Url) -> Self {
+        let base_url = Rc::from(url);
+
+        let client = Client::new();
+
+        Self { client, base_url }
+    }
 
     /// Download content from block with this CID.
     pub async fn cat(&self, cid: Cid) -> Result<Vec<u8>> {
@@ -86,14 +103,14 @@ impl IpfsService {
 
         let url = self.base_url.join("dag/get")?;
 
-        let res = self
+        let node = self
             .client
             .post(url)
             .query(&[("arg", &origin)])
             .send()
+            .await?
+            .json::<T>()
             .await?;
-
-        let node = res.json::<T>().await?;
 
         Ok(node)
     }
@@ -107,12 +124,9 @@ impl IpfsService {
             .post(url)
             .query(&[("arg", &ipns.to_string())])
             .send()
+            .await?
+            .json::<NameResolveResponse>()
             .await?;
-
-        let res = match res.json::<NameResolveResponse>().await {
-            Ok(res) => res,
-            Err(e) => return Err(e.into()),
-        };
 
         let cid = Cid::try_from(res.path)?;
 
@@ -122,12 +136,13 @@ impl IpfsService {
     pub async fn peer_id(&self) -> Result<Cid> {
         let url = self.base_url.join("id")?;
 
-        let res = self.client.post(url).send().await?;
-
-        let res = match res.json::<IdResponse>().await {
-            Ok(res) => res,
-            Err(e) => return Err(e.into()),
-        };
+        let res = self
+            .client
+            .post(url)
+            .send()
+            .await?
+            .json::<IdResponse>()
+            .await?;
 
         let decoded = Base::Base58Btc.decode(res.id)?;
         let multihash = MultihashGeneric::from_bytes(&decoded)?;
@@ -175,45 +190,45 @@ impl IpfsService {
 
         Ok(response)
     }
+}
 
-    pub fn pubsub_sub_stream(
-        response: Response,
-        regis: AbortRegistration,
-    ) -> impl Stream<Item = Result<(Cid, Vec<u8>)>> {
-        let stream = response.bytes_stream();
+pub fn pubsub_sub_stream(
+    response: Response,
+    regis: AbortRegistration,
+) -> impl Stream<Item = Result<(Cid, Vec<u8>)>> {
+    let stream = response.bytes_stream();
 
-        let abortable_stream = Abortable::new(stream, regis);
+    let abortable_stream = Abortable::new(stream, regis);
 
-        //TODO implement from reqwest error for std::io::Error
-        let line_stream = abortable_stream
-            //.err_into()
-            .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))
-            .into_async_read()
-            .lines();
+    //TODO implement from reqwest error for std::io::Error
+    let line_stream = abortable_stream
+        //.err_into()
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))
+        .into_async_read()
+        .lines();
 
-        line_stream.map(|item| match item {
-            Ok(line) => {
-                if let Ok(response) = serde_json::from_str::<PubsubSubResponse>(&line) {
-                    let PubsubSubResponse { from, data } = response;
+    line_stream.map(|item| match item {
+        Ok(line) => {
+            if let Ok(response) = serde_json::from_str::<PubsubSubResponse>(&line) {
+                let PubsubSubResponse { from, data } = response;
 
-                    let (_, from) = decode(from)?;
-                    let (_, data) = decode(data)?;
+                //Use Peer ID as CID v1 instead of multihash btc58 encoded
+                // https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md#string-representation
+                let decoded = Base::Base58Btc.decode(from)?;
+                let multihash = MultihashGeneric::from_bytes(&decoded)?;
+                let cid = Cid::new_v1(0x70, multihash);
 
-                    //Use Peer ID as CID v1 instead of multihash btc58 encoded
-                    // https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md#string-representation
-                    let multihash = MultihashGeneric::from_bytes(&from)?;
-                    let cid = Cid::new_v1(0x70, multihash);
+                let (_, data) = decode(data)?;
 
-                    return Ok((cid, data));
-                }
-
-                let ipfs_error = serde_json::from_str::<IPFSError>(&line)?;
-
-                return Err(ipfs_error.into());
+                return Ok((cid, data));
             }
-            Err(e) => Err(e.into()),
-        })
-    }
+
+            let ipfs_error = serde_json::from_str::<IPFSError>(&line)?;
+
+            return Err(ipfs_error.into());
+        }
+        Err(e) => Err(e.into()),
+    })
 }
 
 #[derive(Deserialize)]
@@ -274,14 +289,3 @@ impl From<IPFSError> for std::io::Error {
         std::io::Error::new(std::io::ErrorKind::Other, error)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
-    }
-}
-
-//#[cfg(target_arch = "wasm32")]
