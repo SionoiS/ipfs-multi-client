@@ -1,13 +1,16 @@
-use core::fmt;
+mod responses;
 
 use std::{borrow::Cow, convert::TryFrom, rc::Rc};
 
+use bytes::Bytes;
 use futures_util::{
     future::{AbortRegistration, Abortable},
-    AsyncBufReadExt, Stream, StreamExt, TryStreamExt,
+    AsyncBufReadExt, AsyncRead, Stream, StreamExt, TryStreamExt,
 };
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
+
+use crate::responses::*;
 
 use cid::{
     multibase::{decode, encode, Base},
@@ -17,7 +20,7 @@ use cid::{
 
 use reqwest::{
     multipart::{Form, Part},
-    Client, Response, Url,
+    Body, Client, Response, Url,
 };
 
 pub const DEFAULT_URI: &str = "http://127.0.0.1:5001/api/v0/";
@@ -50,6 +53,33 @@ impl IpfsService {
         Self { client, base_url }
     }
 
+    pub async fn add<S>(&self, stream: S) -> Result<AddResponse>
+    where
+        S: futures_util::stream::TryStream + Send + Sync + 'static,
+        S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
+        Bytes: From<S::Ok>,
+    {
+        let url = self.base_url.join("add")?;
+
+        let body = Body::wrap_stream(stream);
+        let part = Part::stream(body);
+
+        let form = Form::new().part("path", part);
+
+        let response = self
+            .client
+            .post(url)
+            .query(&[("pin", "false")])
+            .query(&[("cid-version", "1")])
+            .multipart(form)
+            .send()
+            .await?
+            .json::<AddResponse>()
+            .await?;
+
+        Ok(response)
+    }
+
     /// Download content from block with this CID.
     pub async fn cat(&self, cid: Cid) -> Result<Vec<u8>> {
         let url = self.base_url.join("cat")?;
@@ -64,6 +94,32 @@ impl IpfsService {
             .await?;
 
         Ok(bytes.to_vec())
+    }
+
+    pub async fn pin_add(&self, cid: Cid, recursive: bool) -> Result<()> {
+        let url = self.base_url.join("pin/add")?;
+
+        self.client
+            .post(url)
+            .query(&[("arg", &cid.to_string())])
+            .query(&[("recursive", &recursive.to_string())])
+            .send()
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn pin_rm(&self, cid: Cid, recursive: bool) -> Result<()> {
+        let url = self.base_url.join("pin/rm")?;
+
+        self.client
+            .post(url)
+            .query(&[("arg", &cid.to_string())])
+            .query(&[("recursive", &recursive.to_string())])
+            .send()
+            .await?;
+
+        Ok(())
     }
 
     /// Serialize then add dag node to IPFS. Return a CID.
@@ -115,11 +171,49 @@ impl IpfsService {
         Ok(node)
     }
 
+    /// Returns all IPNS keys on this IPFS node.
+    pub async fn key_list(&self) -> Result<KeyList> {
+        let url = self.base_url.join("key/list")?;
+
+        let response = self
+            .client
+            .post(url)
+            .query(&[("l", "true"), ("ipns-base", "base32")])
+            .send()
+            .await?
+            .json::<KeyListResponse>()
+            .await?;
+
+        Ok(response.into())
+    }
+
+    /// Publish new IPNS record.
+    pub async fn name_publish<U>(&self, cid: Cid, key: U) -> Result<NamePublishResponse>
+    where
+        U: Into<Cow<'static, str>>,
+    {
+        let url = self.base_url.join("name/publish")?;
+
+        let response = self
+            .client
+            .post(url)
+            .query(&[("arg", &cid.to_string())])
+            .query(&[("lifetime", "4320h")]) // 6 months
+            .query(&[("key", &key.into())])
+            .query(&[("ipns-base", "base32")])
+            .send()
+            .await?
+            .json::<NamePublishResponse>()
+            .await?;
+
+        Ok(response)
+    }
+
     /// Resolve IPNS name. Returns CID.
     pub async fn name_resolve(&self, ipns: Cid) -> Result<Cid> {
         let url = self.base_url.join("name/resolve")?;
 
-        let res = self
+        let response = self
             .client
             .post(url)
             .query(&[("arg", &ipns.to_string())])
@@ -128,11 +222,10 @@ impl IpfsService {
             .json::<NameResolveResponse>()
             .await?;
 
-        let cid = Cid::try_from(res.path)?;
-
-        Ok(cid)
+        Ok(response.into())
     }
 
+    ///Return peer id as cid v1.
     pub async fn peer_id(&self) -> Result<Cid> {
         let url = self.base_url.join("id")?;
 
@@ -151,6 +244,7 @@ impl IpfsService {
         Ok(cid)
     }
 
+    /// Send data on the specified topic.
     pub async fn pubsub_pub<T, D>(&self, topic: T, data: D) -> Result<()>
     where
         T: AsRef<[u8]>,
@@ -229,63 +323,4 @@ pub fn pubsub_sub_stream(
         }
         Err(e) => Err(e.into()),
     })
-}
-
-#[derive(Deserialize)]
-struct PubsubSubResponse {
-    pub from: String,
-    pub data: String,
-}
-
-#[derive(Deserialize)]
-struct DagPutResponse {
-    #[serde(rename = "Cid")]
-    pub cid: CidString,
-}
-
-#[derive(Deserialize)]
-struct CidString {
-    #[serde(rename = "/")]
-    pub cid_string: String,
-}
-
-#[derive(Deserialize)]
-struct NameResolveResponse {
-    #[serde(rename = "Path")]
-    pub path: String,
-}
-
-#[derive(Deserialize)]
-struct IdResponse {
-    #[serde(rename = "ID")]
-    pub id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct IPFSError {
-    #[serde(rename = "Message")]
-    pub message: String,
-
-    #[serde(rename = "Code")]
-    pub code: u64,
-
-    #[serde(rename = "Type")]
-    pub error_type: String,
-}
-
-impl std::error::Error for IPFSError {}
-
-impl fmt::Display for IPFSError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match serde_json::to_string_pretty(&self) {
-            Ok(e) => write!(f, "{}", e),
-            Err(e) => write!(f, "{}", e),
-        }
-    }
-}
-
-impl From<IPFSError> for std::io::Error {
-    fn from(error: IPFSError) -> Self {
-        std::io::Error::new(std::io::ErrorKind::Other, error)
-    }
 }
