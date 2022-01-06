@@ -15,7 +15,7 @@ use wasm_bindgen_test::*;
 wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
 use cid::{multibase::Base, multihash::MultihashGeneric, Cid};
-use futures_util::{future::AbortHandle, future::FutureExt, join, StreamExt};
+use futures_util::{self, future::AbortHandle, future::FutureExt, join, StreamExt};
 use ipfs_multi_client::IpfsService;
 
 const PEER_ID: &str = "12D3KooWRsEKtLGLW9FHw7t7dDhHrMDahw3VwssNgh55vksdvfmC";
@@ -114,7 +114,7 @@ async fn name_publish() {
 
     let cid = Cid::try_from("bafyreiejplp7y57dxnasxk7vjdujclpe5hzudiqlgvnit4vinqvtehh3ci").unwrap();
 
-    let res = ipfs.name_publish(cid, "self").await.unwrap();
+    let _res = ipfs.name_publish(cid, "self").await.unwrap();
 
     //console_log!("Name Publish => {:?}", res);
 }
@@ -128,4 +128,33 @@ async fn pin_roundtrip() {
     let _ = ipfs.pin_add(cid, false).await;
 
     let _ = ipfs.pin_rm(cid, false).await;
+}
+
+#[wasm_bindgen_test]
+async fn add_cat_roundtrip() {
+    //use js_sys::{Array, Uint8Array};
+    //use wasm_bindgen::{JsCast, JsValue};
+    //use wasm_streams::readable::ReadableStream;
+    //use web_sys::Blob;
+    use bytes::Bytes;
+
+    let ipfs = IpfsService::default();
+
+    let in_data = b"Hello World!";
+    let bytes = Bytes::copy_from_slice(in_data);
+
+    /* let u8_array = Uint8Array::new_with_length(in_data.len() as u32);
+    u8_array.copy_from(in_data);
+
+    let array = Array::new();
+    array.push(&u8_array);
+    let blob = Blob::new_with_u8_array_sequence(&array).expect("Blob Construction");
+
+    let stream = ReadableStream::from_raw(blob.stream().unchecked_into()); */
+
+    let cid = ipfs.add(bytes).await.unwrap();
+
+    let out_data = ipfs.cat(cid).await.unwrap();
+
+    assert_eq!(in_data, &out_data[0..12])
 }

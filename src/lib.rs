@@ -2,10 +2,9 @@ mod responses;
 
 use std::{borrow::Cow, convert::TryFrom, rc::Rc};
 
-use bytes::Bytes;
 use futures_util::{
     future::{AbortRegistration, Abortable},
-    AsyncBufReadExt, AsyncRead, Stream, StreamExt, TryStreamExt,
+    AsyncBufReadExt, Stream, StreamExt, TryStreamExt,
 };
 
 use serde::{de::DeserializeOwned, Serialize};
@@ -20,8 +19,10 @@ use cid::{
 
 use reqwest::{
     multipart::{Form, Part},
-    Body, Client, Response, Url,
+    Client, Response, Url,
 };
+
+use bytes::Bytes;
 
 pub const DEFAULT_URI: &str = "http://127.0.0.1:5001/api/v0/";
 
@@ -53,7 +54,30 @@ impl IpfsService {
         Self { client, base_url }
     }
 
-    pub async fn add<S>(&self, stream: S) -> Result<AddResponse>
+    #[cfg(target_arch = "wasm32")]
+    pub async fn add(&self, bytes: Bytes) -> Result<Cid> {
+        let url = self.base_url.join("add")?;
+
+        let part = Part::stream(bytes);
+
+        let form = Form::new().part("path", part);
+
+        let response = self
+            .client
+            .post(url)
+            .query(&[("pin", "false")])
+            .query(&[("cid-version", "1")])
+            .multipart(form)
+            .send()
+            .await?
+            .json::<AddResponse>()
+            .await?;
+
+        Ok(response.into())
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn add<S>(&self, stream: S) -> Result<Cid>
     where
         S: futures_util::stream::TryStream + Send + Sync + 'static,
         S::Error: Into<Box<dyn std::error::Error + Send + Sync>>,
@@ -61,7 +85,7 @@ impl IpfsService {
     {
         let url = self.base_url.join("add")?;
 
-        let body = Body::wrap_stream(stream);
+        let body = reqwest::Body::wrap_stream(stream);
         let part = Part::stream(body);
 
         let form = Form::new().part("path", part);
@@ -77,11 +101,11 @@ impl IpfsService {
             .json::<AddResponse>()
             .await?;
 
-        Ok(response)
+        Ok(response.into())
     }
 
     /// Download content from block with this CID.
-    pub async fn cat(&self, cid: Cid) -> Result<Vec<u8>> {
+    pub async fn cat(&self, cid: Cid) -> Result<Bytes> {
         let url = self.base_url.join("cat")?;
 
         let bytes = self
@@ -93,7 +117,7 @@ impl IpfsService {
             .bytes()
             .await?;
 
-        Ok(bytes.to_vec())
+        Ok(bytes)
     }
 
     pub async fn pin_add(&self, cid: Cid, recursive: bool) -> Result<()> {

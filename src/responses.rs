@@ -6,17 +6,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct AddResponse {
-    #[serde(rename = "Bytes")]
-    pub bytes: String,
-
     #[serde(rename = "Hash")]
     pub hash: String,
+}
 
-    #[serde(rename = "Name")]
-    pub name: String,
-
-    #[serde(rename = "Size")]
-    pub size: String,
+impl From<AddResponse> for Cid {
+    fn from(response: AddResponse) -> Self {
+        Cid::try_from(response.hash).unwrap()
+    }
 }
 
 #[derive(Deserialize)]

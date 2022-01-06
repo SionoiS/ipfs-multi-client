@@ -2,8 +2,9 @@
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
     use cid::{multibase::Base, multihash::MultihashGeneric, Cid};
-    use futures_util::{future::AbortHandle, future::FutureExt, StreamExt};
+    use futures_util::{future::AbortHandle, future::FutureExt, stream, StreamExt};
     use ipfs_multi_client::IpfsService;
 
     const PEER_ID: &str = "12D3KooWRsEKtLGLW9FHw7t7dDhHrMDahw3VwssNgh55vksdvfmC";
@@ -118,5 +119,23 @@ mod tests {
         let _ = ipfs.pin_add(cid, false).await;
 
         let _ = ipfs.pin_rm(cid, false).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn add_cat_roundtrip() {
+        let ipfs = IpfsService::default();
+
+        let data: Vec<Result<Bytes, reqwest::Error>> = vec![
+            Ok(Bytes::from_static(b"Hello ")),
+            Ok(Bytes::from_static(b"World!")),
+        ];
+
+        let stream = stream::iter(data);
+
+        let cid = ipfs.add(stream).await.unwrap();
+
+        let data = ipfs.cat(cid).await.unwrap();
+
+        assert_eq!(b"Hello World!", &data[0..12])
     }
 }
