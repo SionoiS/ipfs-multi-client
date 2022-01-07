@@ -74,13 +74,13 @@ impl IpfsService {
 
         //println!("{}", std::str::from_utf8(&bytes).unwrap());
 
-        match serde_json::from_slice::<AddResponse>(&bytes) {
-            Ok(res) => return Ok(res.try_into()?),
-            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
-                Ok(error) => Err(error.into()),
-                Err(e) => Err(e.into()),
-            },
+        if let Ok(res) = serde_json::from_slice::<AddResponse>(&bytes) {
+            return Ok(res.try_into()?);
         }
+
+        let error = serde_json::from_slice::<IPFSError>(&bytes)?;
+
+        Err(error.into())
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -110,13 +110,13 @@ impl IpfsService {
 
         //println!("{}", std::str::from_utf8(&bytes).unwrap());
 
-        match serde_json::from_slice::<AddResponse>(&bytes) {
-            Ok(res) => return Ok(res.try_into()?),
-            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
-                Ok(error) => Err(error.into()),
-                Err(e) => Err(e.into()),
-            },
+        if let Ok(res) = serde_json::from_slice::<AddResponse>(&bytes) {
+            return Ok(res.try_into()?);
         }
+
+        let error = serde_json::from_slice::<IPFSError>(&bytes)?;
+
+        Err(error.into())
     }
 
     /// Download content from block with this CID.
@@ -144,6 +144,7 @@ impl IpfsService {
         Ok(bytes)
     }
 
+    /// Pin a CID recursively or not.
     pub async fn pin_add(&self, cid: Cid, recursive: bool) -> Result<PinAddResponse> {
         let url = self.base_url.join("pin/add")?;
 
@@ -159,15 +160,16 @@ impl IpfsService {
 
         //println!("{}", std::str::from_utf8(&bytes).unwrap());
 
-        match serde_json::from_slice::<PinAddResponse>(&bytes) {
-            Ok(res) => return Ok(res),
-            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
-                Ok(error) => Err(error.into()),
-                Err(e) => Err(e.into()),
-            },
+        if let Ok(res) = serde_json::from_slice::<PinAddResponse>(&bytes) {
+            return Ok(res);
         }
+
+        let error = serde_json::from_slice::<IPFSError>(&bytes)?;
+
+        Err(error.into())
     }
 
+    /// Remove Pinned CID.
     pub async fn pin_rm(&self, cid: Cid, recursive: bool) -> Result<PinRmResponse> {
         let url = self.base_url.join("pin/rm")?;
 
@@ -183,13 +185,13 @@ impl IpfsService {
 
         //println!("pin_rm Raw => {}", std::str::from_utf8(&bytes).unwrap());
 
-        match serde_json::from_slice::<PinRmResponse>(&bytes) {
-            Ok(res) => return Ok(res),
-            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
-                Ok(error) => Err(error.into()),
-                Err(e) => Err(e.into()),
-            },
+        if let Ok(res) = serde_json::from_slice::<PinRmResponse>(&bytes) {
+            return Ok(res);
         }
+
+        let error = serde_json::from_slice::<IPFSError>(&bytes)?;
+
+        Err(error.into())
     }
 
     /// Serialize then add dag node to IPFS. Return a CID.
@@ -217,13 +219,13 @@ impl IpfsService {
 
         //println!("{}", std::str::from_utf8(&bytes).unwrap());
 
-        match serde_json::from_slice::<DagPutResponse>(&bytes) {
-            Ok(res) => return Ok(res.try_into()?),
-            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
-                Ok(error) => Err(error.into()),
-                Err(e) => Err(e.into()),
-            },
+        if let Ok(res) = serde_json::from_slice::<DagPutResponse>(&bytes) {
+            return Ok(res.try_into()?);
         }
+
+        let error = serde_json::from_slice::<IPFSError>(&bytes)?;
+
+        Err(error.into())
     }
 
     /// Deserialize dag node from IPFS path. Return dag node.
@@ -252,13 +254,13 @@ impl IpfsService {
 
         //println!("{}", std::str::from_utf8(&bytes).unwrap());
 
-        match serde_json::from_slice::<T>(&bytes) {
-            Ok(res) => return Ok(res),
-            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
-                Ok(error) => Err(error.into()),
-                Err(e) => Err(e.into()),
-            },
+        if let Ok(res) = serde_json::from_slice::<T>(&bytes) {
+            return Ok(res);
         }
+
+        let error = serde_json::from_slice::<IPFSError>(&bytes)?;
+
+        Err(error.into())
     }
 
     /// Returns all IPNS keys on this IPFS node.
@@ -276,13 +278,13 @@ impl IpfsService {
 
         //println!("{}", std::str::from_utf8(&bytes).unwrap());
 
-        match serde_json::from_slice::<KeyListResponse>(&bytes) {
-            Ok(res) => return Ok(res.try_into()?),
-            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
-                Ok(error) => Err(error.into()),
-                Err(e) => Err(e.into()),
-            },
+        if let Ok(res) = serde_json::from_slice::<KeyListResponse>(&bytes) {
+            return Ok(res.try_into()?);
         }
+
+        let error = serde_json::from_slice::<IPFSError>(&bytes)?;
+
+        Err(error.into())
     }
 
     /// Publish new IPNS record.
@@ -306,13 +308,13 @@ impl IpfsService {
 
         //println!("{}", std::str::from_utf8(&bytes).unwrap());
 
-        match serde_json::from_slice::<NamePublishResponse>(&bytes) {
-            Ok(res) => return Ok(res),
-            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
-                Ok(error) => Err(error.into()),
-                Err(e) => Err(e.into()),
-            },
+        if let Ok(res) = serde_json::from_slice::<NamePublishResponse>(&bytes) {
+            return Ok(res);
         }
+
+        let error = serde_json::from_slice::<IPFSError>(&bytes)?;
+
+        Err(error.into())
     }
 
     /// Resolve IPNS name. Returns CID.
@@ -330,13 +332,13 @@ impl IpfsService {
 
         //println!("{}", std::str::from_utf8(&bytes).unwrap());
 
-        match serde_json::from_slice::<NameResolveResponse>(&bytes) {
-            Ok(res) => return Ok(res.try_into()?),
-            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
-                Ok(error) => Err(error.into()),
-                Err(e) => Err(e.into()),
-            },
+        if let Ok(res) = serde_json::from_slice::<NameResolveResponse>(&bytes) {
+            return Ok(res.try_into()?);
         }
+
+        let error = serde_json::from_slice::<IPFSError>(&bytes)?;
+
+        Err(error.into())
     }
 
     ///Return peer id as cid v1.
@@ -347,13 +349,13 @@ impl IpfsService {
 
         //println!("{}", std::str::from_utf8(&bytes).unwrap());
 
-        match serde_json::from_slice::<IdResponse>(&bytes) {
-            Ok(res) => return Ok(res.try_into()?),
-            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
-                Ok(error) => Err(error.into()),
-                Err(e) => Err(e.into()),
-            },
+        if let Ok(res) = serde_json::from_slice::<IdResponse>(&bytes) {
+            return Ok(res.try_into()?);
         }
+
+        let error = serde_json::from_slice::<IPFSError>(&bytes)?;
+
+        Err(error.into())
     }
 
     /// Send data on the specified topic.
