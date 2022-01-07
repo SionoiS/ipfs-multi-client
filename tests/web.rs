@@ -154,7 +154,7 @@ async fn add_cat_roundtrip() {
 
     let cid = ipfs.add(bytes).await.unwrap();
 
-    let out_data = ipfs.cat(cid).await.unwrap();
+    let out_data = ipfs.cat(cid, Option::<&str>::None).await.unwrap();
 
     assert_eq!(in_data, &out_data[0..12])
 }

@@ -105,13 +105,22 @@ impl IpfsService {
     }
 
     /// Download content from block with this CID.
-    pub async fn cat(&self, cid: Cid) -> Result<Bytes> {
+    pub async fn cat<U>(&self, cid: Cid, path: Option<U>) -> Result<Bytes>
+    where
+        U: Into<Cow<'static, str>>,
+    {
         let url = self.base_url.join("cat")?;
+
+        let mut origin = cid.to_string();
+
+        if let Some(path) = path {
+            origin.push_str(&path.into());
+        }
 
         let bytes = self
             .client
             .post(url)
-            .query(&[("arg", &cid.to_string())])
+            .query(&[("arg", &origin)])
             .send()
             .await?
             .bytes()

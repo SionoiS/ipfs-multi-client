@@ -97,12 +97,13 @@ mod tests {
         assert_eq!(list["self"], self_cid)
     }
 
+    const TEST_CID: &str = "bafyreiejplp7y57dxnasxk7vjdujclpe5hzudiqlgvnit4vinqvtehh3ci";
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn name_publish() {
         let ipfs = IpfsService::default();
 
-        let cid =
-            Cid::try_from("bafyreiejplp7y57dxnasxk7vjdujclpe5hzudiqlgvnit4vinqvtehh3ci").unwrap();
+        let cid = Cid::try_from(TEST_CID).unwrap();
 
         let res = ipfs.name_publish(cid, "self").await.unwrap();
 
@@ -113,8 +114,7 @@ mod tests {
     async fn pin_roundtrip() {
         let ipfs = IpfsService::default();
 
-        let cid =
-            Cid::try_from("bafyreiejplp7y57dxnasxk7vjdujclpe5hzudiqlgvnit4vinqvtehh3ci").unwrap();
+        let cid = Cid::try_from(TEST_CID).unwrap();
 
         let _ = ipfs.pin_add(cid, false).await;
 
@@ -134,7 +134,7 @@ mod tests {
 
         let cid = ipfs.add(stream).await.unwrap();
 
-        let data = ipfs.cat(cid).await.unwrap();
+        let data = ipfs.cat(cid, Option::<&str>::None).await.unwrap();
 
         assert_eq!(b"Hello World!", &data[0..12])
     }
