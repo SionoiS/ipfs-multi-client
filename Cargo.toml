@@ -5,12 +5,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bytes = "1"
+bytes = { version = "1", default-features = false, features = [] }
 cid = { version = "0.7", default-features = false, features = ["std"] }
-futures-util = { version = "0.3", default-features = true, features = ["io"] }
-reqwest = { git = "https://github.com/SionoiS/reqwest", branch = "stream", default-features = false, features = ["json", "multipart", "stream"]}
+futures-util = { version = "0.3", default-features = false, features = ["io"] }
+reqwest = { git = "https://github.com/SionoiS/reqwest", branch = "stream", default-features = false, features = ["multipart", "stream"]}
 serde = { version = "1.0", default-features = false, features = ["derive"] }
-serde_json = { version = "1.0", default-features = false, features = [] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { version = "1", features = ['full']}

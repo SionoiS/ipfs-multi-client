@@ -1,6 +1,6 @@
 mod responses;
 
-use std::{borrow::Cow, convert::TryFrom, rc::Rc};
+use std::{borrow::Cow, rc::Rc};
 
 use futures_util::{
     future::{AbortRegistration, Abortable},
@@ -12,8 +12,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use crate::responses::*;
 
 use cid::{
-    multibase::{decode, encode, Base},
-    multihash::MultihashGeneric,
+    multibase::{encode, Base},
     Cid,
 };
 
@@ -62,7 +61,7 @@ impl IpfsService {
 
         let form = Form::new().part("path", part);
 
-        let response = self
+        let bytes = self
             .client
             .post(url)
             .query(&[("pin", "false")])
@@ -70,10 +69,18 @@ impl IpfsService {
             .multipart(form)
             .send()
             .await?
-            .json::<AddResponse>()
+            .bytes()
             .await?;
 
-        Ok(response.into())
+        //println!("{}", std::str::from_utf8(&bytes).unwrap());
+
+        match serde_json::from_slice::<AddResponse>(&bytes) {
+            Ok(res) => return Ok(res.try_into()?),
+            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
+                Ok(error) => Err(error.into()),
+                Err(e) => Err(e.into()),
+            },
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -90,7 +97,7 @@ impl IpfsService {
 
         let form = Form::new().part("path", part);
 
-        let response = self
+        let bytes = self
             .client
             .post(url)
             .query(&[("pin", "false")])
@@ -98,10 +105,18 @@ impl IpfsService {
             .multipart(form)
             .send()
             .await?
-            .json::<AddResponse>()
+            .bytes()
             .await?;
 
-        Ok(response.into())
+        //println!("{}", std::str::from_utf8(&bytes).unwrap());
+
+        match serde_json::from_slice::<AddResponse>(&bytes) {
+            Ok(res) => return Ok(res.try_into()?),
+            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
+                Ok(error) => Err(error.into()),
+                Err(e) => Err(e.into()),
+            },
+        }
     }
 
     /// Download content from block with this CID.
@@ -129,30 +144,52 @@ impl IpfsService {
         Ok(bytes)
     }
 
-    pub async fn pin_add(&self, cid: Cid, recursive: bool) -> Result<()> {
+    pub async fn pin_add(&self, cid: Cid, recursive: bool) -> Result<PinAddResponse> {
         let url = self.base_url.join("pin/add")?;
 
-        self.client
+        let bytes = self
+            .client
             .post(url)
             .query(&[("arg", &cid.to_string())])
             .query(&[("recursive", &recursive.to_string())])
             .send()
+            .await?
+            .bytes()
             .await?;
 
-        Ok(())
+        //println!("{}", std::str::from_utf8(&bytes).unwrap());
+
+        match serde_json::from_slice::<PinAddResponse>(&bytes) {
+            Ok(res) => return Ok(res),
+            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
+                Ok(error) => Err(error.into()),
+                Err(e) => Err(e.into()),
+            },
+        }
     }
 
-    pub async fn pin_rm(&self, cid: Cid, recursive: bool) -> Result<()> {
+    pub async fn pin_rm(&self, cid: Cid, recursive: bool) -> Result<PinRmResponse> {
         let url = self.base_url.join("pin/rm")?;
 
-        self.client
+        let bytes = self
+            .client
             .post(url)
             .query(&[("arg", &cid.to_string())])
             .query(&[("recursive", &recursive.to_string())])
             .send()
+            .await?
+            .bytes()
             .await?;
 
-        Ok(())
+        //println!("pin_rm Raw => {}", std::str::from_utf8(&bytes).unwrap());
+
+        match serde_json::from_slice::<PinRmResponse>(&bytes) {
+            Ok(res) => return Ok(res),
+            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
+                Ok(error) => Err(error.into()),
+                Err(e) => Err(e.into()),
+            },
+        }
     }
 
     /// Serialize then add dag node to IPFS. Return a CID.
@@ -166,16 +203,27 @@ impl IpfsService {
 
         let url = self.base_url.join("dag/put")?;
 
-        let res = self.client.post(url).multipart(form).send().await?;
+        let bytes = self
+            .client
+            .post(url)
+            .query(&[("store-codec", "dag-cbor")])
+            .query(&[("input-codec", "dag-json")])
+            .query(&[("pin", "false")])
+            .multipart(form)
+            .send()
+            .await?
+            .bytes()
+            .await?;
 
-        let res = match res.json::<DagPutResponse>().await {
-            Ok(res) => res,
-            Err(e) => return Err(e.into()),
-        };
+        //println!("{}", std::str::from_utf8(&bytes).unwrap());
 
-        let cid = Cid::try_from(res.cid.cid_string)?;
-
-        Ok(cid)
+        match serde_json::from_slice::<DagPutResponse>(&bytes) {
+            Ok(res) => return Ok(res.try_into()?),
+            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
+                Ok(error) => Err(error.into()),
+                Err(e) => Err(e.into()),
+            },
+        }
     }
 
     /// Deserialize dag node from IPFS path. Return dag node.
@@ -192,32 +240,49 @@ impl IpfsService {
 
         let url = self.base_url.join("dag/get")?;
 
-        let node = self
+        let bytes = self
             .client
             .post(url)
             .query(&[("arg", &origin)])
+            .query(&[("output-codec", "dag-json")])
             .send()
             .await?
-            .json::<T>()
+            .bytes()
             .await?;
 
-        Ok(node)
+        //println!("{}", std::str::from_utf8(&bytes).unwrap());
+
+        match serde_json::from_slice::<T>(&bytes) {
+            Ok(res) => return Ok(res),
+            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
+                Ok(error) => Err(error.into()),
+                Err(e) => Err(e.into()),
+            },
+        }
     }
 
     /// Returns all IPNS keys on this IPFS node.
     pub async fn key_list(&self) -> Result<KeyList> {
         let url = self.base_url.join("key/list")?;
 
-        let response = self
+        let bytes = self
             .client
             .post(url)
             .query(&[("l", "true"), ("ipns-base", "base32")])
             .send()
             .await?
-            .json::<KeyListResponse>()
+            .bytes()
             .await?;
 
-        Ok(response.into())
+        //println!("{}", std::str::from_utf8(&bytes).unwrap());
+
+        match serde_json::from_slice::<KeyListResponse>(&bytes) {
+            Ok(res) => return Ok(res.try_into()?),
+            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
+                Ok(error) => Err(error.into()),
+                Err(e) => Err(e.into()),
+            },
+        }
     }
 
     /// Publish new IPNS record.
@@ -227,7 +292,7 @@ impl IpfsService {
     {
         let url = self.base_url.join("name/publish")?;
 
-        let response = self
+        let bytes = self
             .client
             .post(url)
             .query(&[("arg", &cid.to_string())])
@@ -236,45 +301,59 @@ impl IpfsService {
             .query(&[("ipns-base", "base32")])
             .send()
             .await?
-            .json::<NamePublishResponse>()
+            .bytes()
             .await?;
 
-        Ok(response)
+        //println!("{}", std::str::from_utf8(&bytes).unwrap());
+
+        match serde_json::from_slice::<NamePublishResponse>(&bytes) {
+            Ok(res) => return Ok(res),
+            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
+                Ok(error) => Err(error.into()),
+                Err(e) => Err(e.into()),
+            },
+        }
     }
 
     /// Resolve IPNS name. Returns CID.
     pub async fn name_resolve(&self, ipns: Cid) -> Result<Cid> {
         let url = self.base_url.join("name/resolve")?;
 
-        let response = self
+        let bytes = self
             .client
             .post(url)
             .query(&[("arg", &ipns.to_string())])
             .send()
             .await?
-            .json::<NameResolveResponse>()
+            .bytes()
             .await?;
 
-        Ok(response.into())
+        //println!("{}", std::str::from_utf8(&bytes).unwrap());
+
+        match serde_json::from_slice::<NameResolveResponse>(&bytes) {
+            Ok(res) => return Ok(res.try_into()?),
+            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
+                Ok(error) => Err(error.into()),
+                Err(e) => Err(e.into()),
+            },
+        }
     }
 
     ///Return peer id as cid v1.
     pub async fn peer_id(&self) -> Result<Cid> {
         let url = self.base_url.join("id")?;
 
-        let res = self
-            .client
-            .post(url)
-            .send()
-            .await?
-            .json::<IdResponse>()
-            .await?;
+        let bytes = self.client.post(url).send().await?.bytes().await?;
 
-        let decoded = Base::Base58Btc.decode(res.id)?;
-        let multihash = MultihashGeneric::from_bytes(&decoded)?;
-        let cid = Cid::new_v1(0x70, multihash);
+        //println!("{}", std::str::from_utf8(&bytes).unwrap());
 
-        Ok(cid)
+        match serde_json::from_slice::<IdResponse>(&bytes) {
+            Ok(res) => return Ok(res.try_into()?),
+            Err(_) => match serde_json::from_slice::<IPFSError>(&bytes) {
+                Ok(error) => Err(error.into()),
+                Err(e) => Err(e.into()),
+            },
+        }
     }
 
     /// Send data on the specified topic.
@@ -322,7 +401,7 @@ impl IpfsService {
 pub fn pubsub_sub_stream(
     response: Response,
     regis: AbortRegistration,
-) -> impl Stream<Item = Result<(Cid, Vec<u8>)>> {
+) -> impl Stream<Item = Result<PubSubMsg>> {
     let stream = response.bytes_stream();
 
     let abortable_stream = Abortable::new(stream, regis);
@@ -337,17 +416,7 @@ pub fn pubsub_sub_stream(
     line_stream.map(|item| match item {
         Ok(line) => {
             if let Ok(response) = serde_json::from_str::<PubsubSubResponse>(&line) {
-                let PubsubSubResponse { from, data } = response;
-
-                //Use Peer ID as CID v1 instead of multihash btc58 encoded
-                // https://github.com/libp2p/specs/blob/master/peer-ids/peer-ids.md#string-representation
-                let decoded = Base::Base58Btc.decode(from)?;
-                let multihash = MultihashGeneric::from_bytes(&decoded)?;
-                let cid = Cid::new_v1(0x70, multihash);
-
-                let (_, data) = decode(data)?;
-
-                return Ok((cid, data));
+                return Ok(response.try_into()?);
             }
 
             let ipfs_error = serde_json::from_str::<IPFSError>(&line)?;

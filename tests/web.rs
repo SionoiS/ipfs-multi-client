@@ -28,11 +28,10 @@ async fn id() {
 
     let ipfs = IpfsService::default();
 
-    let id = ipfs.peer_id().await.expect("Getting IPFS ID");
-
-    //console_log!("Peer Id => {:?}", id);
-
-    assert_eq!(id, cid)
+    match ipfs.peer_id().await {
+        Ok(res) => assert_eq!(res, cid),
+        Err(e) => panic!("{}", e),
+    }
 }
 
 const TOPIC: &str = "test";
@@ -64,13 +63,10 @@ async fn pubsub_roundtrip() {
 
     let (res, _) = join!(subscribe, publish);
 
-    let (from, data) = res.unwrap();
+    let msg = res.unwrap();
 
-    //console_log!("From => {:?}", from);
-    //console_log!("Data => {:?}", data);
-
-    assert_eq!(from, peer_id);
-    assert_eq!(MSG, String::from_utf8(data).unwrap());
+    assert_eq!(msg.from, peer_id);
+    assert_eq!(MSG, String::from_utf8(msg.data).unwrap());
 }
 
 use serde::{Deserialize, Serialize};
@@ -108,26 +104,35 @@ async fn key_listing() {
     assert_eq!(list["self"], self_cid)
 }
 
-#[wasm_bindgen_test]
+const TEST_CID: &str = "bafyreiejplp7y57dxnasxk7vjdujclpe5hzudiqlgvnit4vinqvtehh3ci";
+
+/* #[wasm_bindgen_test]
 async fn name_publish() {
     let ipfs = IpfsService::default();
 
-    let cid = Cid::try_from("bafyreiejplp7y57dxnasxk7vjdujclpe5hzudiqlgvnit4vinqvtehh3ci").unwrap();
+    let cid = Cid::try_from(TEST_CID).unwrap();
 
-    let _res = ipfs.name_publish(cid, "self").await.unwrap();
-
-    //console_log!("Name Publish => {:?}", res);
-}
+    match ipfs.name_publish(cid, "self").await {
+        Ok(res) => assert_eq!(res.value, format!("/ipfs/{}", TEST_CID)),
+        Err(e) => panic!("{:?}", e),
+    }
+} */
 
 #[wasm_bindgen_test]
 async fn pin_roundtrip() {
     let ipfs = IpfsService::default();
 
-    let cid = Cid::try_from("bafyreiejplp7y57dxnasxk7vjdujclpe5hzudiqlgvnit4vinqvtehh3ci").unwrap();
+    let cid = Cid::try_from(TEST_CID).unwrap();
 
-    let _ = ipfs.pin_add(cid, false).await;
+    match ipfs.pin_add(cid, false).await {
+        Ok(res) => assert_eq!(res.pins[0], TEST_CID),
+        Err(e) => panic!("{:?}", e),
+    }
 
-    let _ = ipfs.pin_rm(cid, false).await;
+    match ipfs.pin_rm(cid, false).await {
+        Ok(res) => assert_eq!(res.pins[0], TEST_CID),
+        Err(e) => panic!("{:?}", e),
+    }
 }
 
 #[wasm_bindgen_test]

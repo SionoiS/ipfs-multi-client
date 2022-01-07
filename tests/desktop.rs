@@ -17,11 +17,10 @@ mod tests {
 
         let ipfs = IpfsService::default();
 
-        let id = ipfs.peer_id().await.expect("Getting IPFS ID");
-
-        //println!("Peer Id => {:?}", id);
-
-        assert_eq!(id, cid)
+        match ipfs.peer_id().await {
+            Ok(res) => assert_eq!(res, cid),
+            Err(e) => panic!("{}", e),
+        }
     }
 
     const TOPIC: &str = "test";
@@ -53,13 +52,10 @@ mod tests {
 
         let (res, _) = tokio::join!(subscribe, publish);
 
-        let (from, data) = res.unwrap();
+        let msg = res.unwrap();
 
-        //println!("From => {:?}", from);
-        //println!("Data => {:?}", data);
-
-        assert_eq!(from, peer_id);
-        assert_eq!(MSG, String::from_utf8(data).unwrap());
+        assert_eq!(peer_id, msg.from);
+        assert_eq!(MSG, String::from_utf8(msg.data).unwrap());
     }
 
     use serde::{Deserialize, Serialize};
@@ -94,20 +90,22 @@ mod tests {
 
         let list = ipfs.key_list().await.unwrap();
 
-        assert_eq!(list["self"], self_cid)
+        assert_eq!(self_cid, list["self"])
     }
 
     const TEST_CID: &str = "bafyreiejplp7y57dxnasxk7vjdujclpe5hzudiqlgvnit4vinqvtehh3ci";
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore]
     async fn name_publish() {
         let ipfs = IpfsService::default();
 
         let cid = Cid::try_from(TEST_CID).unwrap();
 
-        let res = ipfs.name_publish(cid, "self").await.unwrap();
-
-        println!("Name Publish => {:?}", res);
+        match ipfs.name_publish(cid, "self").await {
+            Ok(res) => assert_eq!(res.value, format!("/ipfs/{}", TEST_CID)),
+            Err(e) => panic!("{:?}", e),
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -116,9 +114,15 @@ mod tests {
 
         let cid = Cid::try_from(TEST_CID).unwrap();
 
-        let _ = ipfs.pin_add(cid, false).await;
+        match ipfs.pin_add(cid, false).await {
+            Ok(res) => assert_eq!(res.pins[0], TEST_CID),
+            Err(e) => panic!("{:?}", e),
+        }
 
-        let _ = ipfs.pin_rm(cid, false).await;
+        match ipfs.pin_rm(cid, false).await {
+            Ok(res) => assert_eq!(res.pins[0], TEST_CID),
+            Err(e) => panic!("{:?}", e),
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
